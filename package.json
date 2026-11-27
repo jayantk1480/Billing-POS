@@ -1,0 +1,29 @@
+{
+  "name": "restaurant-pos",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.23.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "infra:up": "docker compose -f infra/docker/docker-compose.yml --env-file .env up -d --wait",
+    "infra:down": "docker compose -f infra/docker/docker-compose.yml --env-file .env down",
+    "db:generate": "pnpm --filter @pos/database generate",
+    "db:migrate": "pnpm --filter @pos/database migrate:dev",
+    "db:deploy": "pnpm --filter @pos/database migrate:deploy",
+    "db:seed": "pnpm --filter @pos/database seed",
+    "db:platform-admin": "pnpm --filter @pos/database platform-admin",
+    "db:studio": "pnpm --filter @pos/database studio",
+    "test:e2e": "pnpm --filter @pos/e2e test:e2e"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "turbo": "^2.11.13",
+    "typescript": "^6.0.2"
+  }
+}

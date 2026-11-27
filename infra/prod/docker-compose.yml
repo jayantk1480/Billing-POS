@@ -1,0 +1,165 @@
+# The whole product on one server. Settings come from the .env file beside this one (copy .env.example).
+# Only Caddy is reachable from outside; the database and Redis are not published at all.
+#
+#   docker compose build      build the image (again after every update, and after changing a domain name)
+#   docker compose up -d      start, or apply changes; database migrations run first
+#   docker compose ps         what is running and whether it is healthy
+#   docker compose logs -f api
+
+name: pos
+
+x-app: &app
+  image: pos-app:${APP_VERSION:-latest}
+  restart: unless-stopped
+  logging: &logging
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+x-api-env: &api-env
+  NODE_ENV: production
+  APP_NAME: ${APP_NAME:-Rasoi POS}
+  API_PORT: "4000"
+  API_PUBLIC_URL: https://${API_DOMAIN}
+  WEB_URL: https://${APP_DOMAIN}
+  ADMIN_URL: https://${ADMIN_DOMAIN}
+  CORS_ORIGINS: https://${APP_DOMAIN},https://${POS_DOMAIN},https://${KDS_DOMAIN}
+  DATABASE_URL: postgresql://pos:${POSTGRES_PASSWORD}@postgres:5432/pos?schema=public
+  REDIS_URL: redis://redis:6379
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+  COOKIE_SECURE: "true"
+  # One proxy (Caddy) sits in front, so the visitor's address is the first forwarded one.
+  TRUST_PROXY_HOPS: "1"
+  STORAGE_LOCAL_DIR: ./storage
+  SMTP_HOST: ${SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_FROM: ${SMTP_FROM}
+  SIGNUP_ENABLED: ${SIGNUP_ENABLED:-true}
+  TRIAL_DAYS: ${TRIAL_DAYS:-14}
+  # Read only by the platform-admin service below, which creates the vendor's own sign-in.
+  PLATFORM_ADMIN_EMAIL: ${PLATFORM_ADMIN_EMAIL:-}
+  PLATFORM_ADMIN_PASSWORD: ${PLATFORM_ADMIN_PASSWORD:-}
+  PLATFORM_ADMIN_NAME: ${PLATFORM_ADMIN_NAME:-Platform admin}
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+      APP_SITE: ${APP_DOMAIN}
+      POS_SITE: ${POS_DOMAIN}
+      KDS_SITE: ${KDS_DOMAIN}
+      ADMIN_SITE: ${ADMIN_DOMAIN}
+      API_SITE: ${API_DOMAIN}
+      ADMIN_ALLOWED_IPS: ${ADMIN_ALLOWED_IPS:-0.0.0.0/0 ::/0}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here. Losing this volume only means they are requested again.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [api, web, pos, kds, admin]
+    logging: *logging
+
+  # Applies any new database migrations, then exits. The API waits for it.
+  migrate:
+    <<: *app
+    build:
+      context: ../..
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+        NEXT_PUBLIC_POS_URL: https://${POS_DOMAIN}
+        NEXT_PUBLIC_APP_NAME: ${APP_NAME:-Rasoi POS}
+        NEXT_PUBLIC_SUPPORT_EMAIL: ${SUPPORT_EMAIL:-}
+    restart: "no"
+    working_dir: /app/packages/database
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+    environment: *api-env
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Creates the vendor's own sign-in to the platform admin, or sets a new password on it. Not started with the
+  # rest; run it by hand:  docker compose run --rm platform-admin
+  platform-admin:
+    <<: *app
+    profiles: ["tools"]
+    restart: "no"
+    working_dir: /app/packages/database
+    command: ["node", "node_modules/tsx/dist/cli.mjs", "prisma/platform-admin.ts"]
+    environment: *api-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  api:
+    <<: *app
+    command: ["node", "apps/api/dist/main.js"]
+    environment: *api-env
+    volumes:
+      - uploads:/app/storage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4000/api/v1/health | grep -q '\"status\":\"ok\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  web:
+    <<: *app
+    working_dir: /app/apps/web
+    command: ["node", "node_modules/next/dist/bin/next", "start", "-p", "3100", "-H", "0.0.0.0"]
+
+  pos:
+    <<: *app
+    working_dir: /app/apps/pos
+    command: ["node", "node_modules/next/dist/bin/next", "start", "-p", "3101", "-H", "0.0.0.0"]
+
+  kds:
+    <<: *app
+    working_dir: /app/apps/kds
+    command: ["node", "node_modules/next/dist/bin/next", "start", "-p", "3102", "-H", "0.0.0.0"]
+
+  admin:
+    <<: *app
+    working_dir: /app/apps/admin
+    command: ["node", "node_modules/next/dist/bin/next", "start", "-p", "3103", "-H", "0.0.0.0"]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: pos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos -d pos"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+  caddy-data:
+  caddy-config:

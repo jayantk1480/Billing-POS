@@ -1,0 +1,19 @@
+@import "tailwindcss";
+@import "@pos/ui/theme.css";
+@source "../../../../packages/ui/src";
+
+/* Receipt printing: the receipt is hidden on screen, and is the only thing on paper. */
+#print-area {
+  display: none;
+}
+@media print {
+  body > *:not(#print-area) {
+    display: none !important;
+  }
+  #print-area {
+    display: block;
+  }
+  body {
+    background: #fff;
+  }
+}

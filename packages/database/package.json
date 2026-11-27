@@ -1,0 +1,35 @@
+{
+  "name": "@pos/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "scripts": {
+    "generate": "prisma generate",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "seed": "tsx prisma/seed.ts",
+    "platform-admin": "tsx prisma/platform-admin.ts",
+    "studio": "prisma studio"
+  },
+  "dependencies": {
+    "@pos/types": "workspace:*",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@pos/config": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.0",
+    "argon2": "^0.45.2",
+    "prisma": "7.10.1",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.2"
+  }
+}

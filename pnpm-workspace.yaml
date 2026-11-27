@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+  - e2e
+allowBuilds:
+  argon2: true
+  esbuild: true
+  prisma: true
+  "@prisma/engines": true
+  "@nestjs/core": false
+  sharp: true
+  unrs-resolver: false
+  "@scarf/scarf": false

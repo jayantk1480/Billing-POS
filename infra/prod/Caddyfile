@@ -1,0 +1,49 @@
+# The only thing reachable from the internet. It gets and renews HTTPS certificates by itself and passes
+# each address to its service. The addresses come from infra/prod/.env through docker-compose.yml.
+{
+	email {$ACME_EMAIL:admin@localhost}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}
+
+{$APP_SITE} {
+	import common
+	reverse_proxy web:3100
+}
+
+{$POS_SITE} {
+	import common
+	reverse_proxy pos:3101
+}
+
+{$KDS_SITE} {
+	import common
+	reverse_proxy kds:3102
+}
+
+# The platform admin is for the vendor's own staff. ADMIN_ALLOWED_IPS limits it to their addresses;
+# left unset, anyone who knows the address reaches the sign-in page.
+{$ADMIN_SITE} {
+	import common
+	@outside not remote_ip {$ADMIN_ALLOWED_IPS:0.0.0.0/0 ::/0}
+	respond @outside "Not found" 404
+	reverse_proxy admin:3103
+}
+
+{$API_SITE} {
+	import common
+	# The same limit for the routes the admin app calls.
+	@platform_outside {
+		path /api/v1/platform/*
+		not remote_ip {$ADMIN_ALLOWED_IPS:0.0.0.0/0 ::/0}
+	}
+	respond @platform_outside "Not found" 404
+	reverse_proxy api:4000
+}

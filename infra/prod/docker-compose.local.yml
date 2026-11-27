@@ -1,0 +1,48 @@
+# For rehearsing the production stack on a laptop. Not for a real server.
+#
+#   cd infra/prod && cp .env.example .env    (fill in the two secrets; the domains are overridden below)
+#   docker compose -p pos-rehearsal -f docker-compose.yml -f docker-compose.local.yml build
+#   docker compose -p pos-rehearsal -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# Everything is plain HTTP on port 8080 under *.localhost, which browsers resolve to this machine:
+# http://app.localhost:8080, pos., kds., admin., and http://api.localhost:8080. Email goes to Mailpit
+# at http://localhost:8027 instead of being sent.
+
+x-local-api-env: &local-api-env
+  API_PUBLIC_URL: http://api.localhost:8080
+  WEB_URL: http://app.localhost:8080
+  ADMIN_URL: http://admin.localhost:8080
+  CORS_ORIGINS: http://app.localhost:8080,http://pos.localhost:8080,http://kds.localhost:8080
+  COOKIE_SECURE: "false"
+  SMTP_HOST: mailpit
+  SMTP_PORT: "1025"
+  SMTP_USER: ""
+  SMTP_PASSWORD: ""
+  SMTP_FROM: no-reply@rehearsal.local
+
+services:
+  caddy:
+    ports: !override ["8080:8080"]
+    environment:
+      APP_SITE: http://app.localhost:8080
+      POS_SITE: http://pos.localhost:8080
+      KDS_SITE: http://kds.localhost:8080
+      ADMIN_SITE: http://admin.localhost:8080
+      API_SITE: http://api.localhost:8080
+
+  migrate:
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: http://api.localhost:8080
+        NEXT_PUBLIC_POS_URL: http://pos.localhost:8080
+    environment: *local-api-env
+
+  api:
+    environment: *local-api-env
+
+  platform-admin:
+    environment: *local-api-env
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["8027:8025"]
